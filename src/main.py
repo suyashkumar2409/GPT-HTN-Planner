@@ -6,6 +6,8 @@ from flask_socketio import SocketIO
 from htn_planner import HTNPlanner
 from search_planner import SearchPlanner
 from guidance import models
+from simpleaichat import AIChat
+import os
 
 from gpt4_utils import get_initial_task, compress_capabilities
 from text_utils import trace_function_calls
@@ -13,6 +15,7 @@ from text_utils import trace_function_calls
 app = Flask(__name__)
 CORS(app)  # Add this line to enable CORS
 socketio = SocketIO(app, cors_allowed_origins="*")
+
 
 @trace_function_calls
 def task_node_to_dict(task_node):
@@ -25,13 +28,16 @@ def task_node_to_dict(task_node):
         "children": [task_node_to_dict(child) for child in task_node.children]
     }
 
+
 @socketio.on('connect')
 def handle_connect():
     print('Client connected')
 
+
 @socketio.on('disconnect')
 def handle_disconnect():
     print('Client disconnected')
+
 
 def send_task_node_update(task_node):
     root_task_node = task_node
@@ -40,13 +46,17 @@ def send_task_node_update(task_node):
     task_node_data = task_node_to_dict(root_task_node)
     socketio.emit('task_node_update', task_node_data)
 
+
 def run_server():
-    socketio.run(app, host="127.0.0.1", debug=True, use_reloader=False, port=5000, allow_unsafe_werkzeug=True, log_output=False)
+    socketio.run(app, host="127.0.0.1", debug=True, use_reloader=False, port=5000, allow_unsafe_werkzeug=True,
+                 log_output=False)
+
 
 def print_plan(task_node, depth=0):
     print(f"{'  ' * depth}- {task_node.task_name}")
     for child in task_node.children:
         print_plan(child, depth + 1)
+
 
 def main(fast_run=False):
     # Clear the log file at the beginning of each run
@@ -91,12 +101,20 @@ def main(fast_run=False):
     server_thread.start()
     print("Starting planning with the initial goal task:", goal_task)
 
+    llm = AIChat(
+        model='gpt-3.5-turbo',
+        console=False,
+        api_key=os.environ['OPENAI_API_KEY'],
+        system_prompt="You are a helpful agent",
+        save_messages=False)
+
     if use_search_planner:
         search_planner = SearchPlanner(initial_state_input, goal_task, compressed_capabilities, 5000,
                                        send_task_node_update)
         plan = search_planner.plan()
     else:
-        htn_planner = HTNPlanner(initial_state_input, goal_task, compressed_capabilities, 5, send_task_node_update, models.OpenAI('gpt-3.5-turbo'))
+        htn_planner = HTNPlanner(initial_state_input, goal_task, compressed_capabilities, 5, send_task_node_update,
+                                 llm)
         plan = htn_planner.htn_planning()
 
     if plan:
@@ -104,6 +122,7 @@ def main(fast_run=False):
         print_plan(plan)
     else:
         print("No plan found.")
+
 
 if __name__ == '__main__':
     # Run the main function

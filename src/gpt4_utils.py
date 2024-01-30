@@ -8,15 +8,9 @@ from guidance import models
 
 # Determines if the current world state matches the goal state
 @trace_function_calls
-def gpt4_is_goal(state, goal_task):
-    prompt = (f"Given the current state '{state}' and the goal '{goal_task}', "
-              f"determine if the current state satisfies the goal. "
-              f"Please provide the answer as 'True' or 'False':")
-
-    response = call_openai_api(prompt)
-
-    log_response("gpt4_is_goal", response.choices[0].message.content.strip())
-    return response.choices[0].message.content.strip().lower() == "true"
+def gpt4_is_goal(lm, state, goal_task):
+    response = htn_prompts.is_goal_success(lm, state, goal_task)
+    return response == "true"
 
 
 # Provides an initial high level task that is likely to meet the goal requirements to start performing decomposition from
@@ -31,7 +25,7 @@ def get_initial_task(goal):
 
 @trace_function_calls
 def is_task_primitive(lm, task_name, capabilities_text):
-    response = lm + htn_prompts.is_task_primitive(task_name=task_name, capabilities_text=capabilities_text)
+    response = htn_prompts.is_task_primitive(lm, task_name=task_name, capabilities_text=capabilities_text)
 
     task_type = response.strip()
     return task_type == "primitive"
@@ -47,14 +41,8 @@ def compress_capabilities(text):
 # Needs pre-conditions to prevent discontinuities in the graph
 @trace_function_calls
 def can_execute(task, capabilities, state):
-    prompt = (f"Given the task '{task}', the capabilities '{capabilities}', "
-              f"and the state '{state}', determine if the task can be executed. "
-              f"Please provide the answer as 'True' or 'False':")
-
-    response = call_openai_api(prompt)
-
-    log_response("can_execute", response.choices[0].message.content.strip())
-    return response.choices[0].message.content.strip().lower() == "true"
+    response = htn_prompts.can_execute(task, capabilities, state)
+    return response == "true"
 
 
 def log_state_change(prev_state, new_state, task):

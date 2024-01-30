@@ -1,0 +1,58 @@
+allowed action templates:
+1. Move {XXX} to {XXX}  //Move an item
+2. Set {XXX.some_attribute} to {True/False}  //set some_attributes of an entity
+3. Delete {XXX}  //remove material consumed by the player
+4. Add {XXX}  //Add items created through crafting or alchemy.
+5. Display ({inventory}/{environment}/{XXX.message})  //XXX is either an npc, location or item
+Determine what attributes about the object should hold, what NPCs are involved in the action, and the effect of the action.
+//action template for "get"
+get {object1}:
+attributes check: //pass
+npcs involved: //pass
+effect: Move {object1} to {inventory}
+//action template for "eat"
+eat {enum(object)}:
+attributes check: {enum(object).is_edible==True}
+npcs involved: //pass
+effect: Delete {enum(object)}
+//action template for "buy with"
+buy {object1} with {object2}:
+attributes check: {object1.is_for_sale==True}; {object2.is_currency==True}; {npc1.is_vendor==True}; {npc1.is_alive==True}
+npcs involved: {npc1}
+effect: Move {object1} to {inventory}; Move {money} to {npc1}
+//action template for "open"
+open {object1}:
+attributes check: {object1.is_open==False}; {object1.is_container==True}; {object1.is_locked==False}
+npcs involved: //pass
+effect: Set {object1.is_open} to {True}
+//action template for "search"
+search {location1}:
+attributes check: //pass
+npcs involved: //pass
+effect: Display {location1.message}
+//action template for "craft with"
+craft {object1} with {enum(object)}:
+attributes check: {enum(object).is_material==True}; {npc1.is_craftsman}; {npc1.is_alive}
+npcs involved: {npc1}
+effect: Add {object1}; Delete {enum(object)}
+//action template for "craft with"
+craft {object1} with {object2}:
+attributes check: {object2.is_tool==True}; {npc1.is_craftsman}; {npc1.is_alive}
+npcs involved: {npc1}
+effect: Add {object1}
+//The following is a wrong example, refers to the error message below for more detail
+//action template for "found using and"
+//[adventurer] found [room: werewolf den] using [object: maps] and [object: torch]
+found {room1} using {object1} and {object2}:
+attributes check: {object1.is_map==True}; {object2.is_torch==True}; {npc1.is_adventurer==True}
+npcs involved: //pass
+effect: Display "{npc1} found {room1} using {object1} and {object2}"
+Error: Unexpected effect format for Display: Display "{npc1} found {room1} using {object1} and {object2}". Expect one of (Display {room1.message}, Display {object1.message}, Display {object2.message}, inventory, environment)
+Your last attempt failed to execute. Try again...
+//action template for "found with and"
+//[adventurer] found [room: werewolf den] with [object: maps] and [object: torch]
+found {room1} with {enum(object)} and {object1}:
+
+attributes check: {enum(object).is_map==True}; {object1.is_torch==True}; {npc1.is_adventurer==True}
+npcs involved: //pass
+effect: Display "{npc1} found {room1} with {enum(object)} and {object1}"

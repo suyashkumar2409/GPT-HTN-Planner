@@ -12,7 +12,7 @@ from guidance import models
 
 class HTNPlanner:
     def __init__(self, initial_state, goal_task, capabilities_input, max_depth=5, send_update_callback=None,
-                 lm=models.OpenAI('gpt-3.5-turbo')):
+                 lm=None):
         self.initial_state = initial_state
         self.goal_task = goal_task
         self.capabilities_input = capabilities_input
@@ -39,7 +39,7 @@ class HTNPlanner:
     @trace_function_calls
     def htn_planning_recursive(self, state, goal_task, root_node, max_depth, capabilities_input, db,
                                send_update_callback=None):
-        if gpt4_is_goal(state, goal_task):
+        if gpt4_is_goal(self.lm, state, goal_task):
             return root_node
 
         if send_update_callback:
@@ -58,7 +58,7 @@ class HTNPlanner:
 
     @trace_function_calls
     def replan_required(self, state, goal_task, task_node):
-        if gpt4_is_goal(state, goal_task):
+        if gpt4_is_goal(self.lm, state, goal_task):
             return False
         if task_node is None or task_node.children == []:
             return True
@@ -104,7 +104,7 @@ class HTNPlanner:
                 translated_task = self.translate_task(task, capabilities_input)
 
                 # Needs pre-conditions to prevent discontinuities in the graph
-                if can_execute(translated_task, capabilities_input, decompose_state):
+                if can_execute(self.llm, translated_task, capabilities_input, decompose_state):
                     task_node.update_task_name(translated_task)  # Update the task with the translated form
                     print(f"Executing task:\n{translated_task}")
                     updated_state = self.execute_task(state, translated_task)
@@ -208,12 +208,7 @@ class HTNPlanner:
     # Update the execute_task function to log state changes
     @trace_function_calls
     def execute_task(self, state, task):
-        prompt = (f"Given the current state '{state}' and the task '{task}', "
-                  f"update the state after executing the task:")
-
-        response = call_openai_api(prompt)
-
-        updated_state = response.choices[0].message.content.strip()
+        updated_state = htn_prompts.execute_task(self.llm, state, task)
         log_response("execute_task", task)
         log_state_change(state, updated_state, task)  # Add this line to log state changes
         return updated_state

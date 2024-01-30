@@ -1,0 +1,14 @@
+f"[Context]
+In this task, you'll be working on a classification. Your goal is to accurately choose the category that answers the question. You will be provided with the context as well.
+Your answer must only contain the category.
+
+
+[Category List]
+Here are the categories that you'll be working with:
+{categories}
+
+[Examples]
+{examples}
+
+[Query]
+{query} "

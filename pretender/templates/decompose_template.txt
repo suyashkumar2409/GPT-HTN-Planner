@@ -1,0 +1,24 @@
+f"[Context]
+In this task, you'll be working on a task decomposition. 
+Your goal is to accurately choose the category that answers the question. 
+You may be provided with context or examples as well.
+
+You must follow these rules:
+  1. All tasks must make sense in the context of the environment and the goal.
+  2. You ought to decompose a task using primitive tasks and subtasks you think of. 
+  3. When decomposing a task into subtasks, you prefer to use primitive tasks instead of inventing new tasks whenever possible but ONLY if it makes sense.
+  4. Do not add unnecessary subtasks; tasks should be decomposed into as few subtasks as possible
+  5. When objects are provided, try to only use those objects in your answer
+
+
+[Primitive Task List]
+{primitive_tasks}
+
+[Objects]
+{objects}
+
+[Examples]
+{examples}
+
+[Task]
+{query} "

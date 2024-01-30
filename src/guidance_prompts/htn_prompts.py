@@ -8,6 +8,36 @@ lm = models.OpenAI('gpt-3.5-turbo')
 
 
 # Add new functions for extracting and suggesting new queries here
+
+def is_goal_success(lm, state, goal_task):
+    response = lm(f'''
+            Given the current state '{state}' and the goal '{goal_task}', 
+            determine if the current state satisfies the goal. 
+            Please provide the answer as 'True' or 'False':
+            ''')
+
+    return response.strip().lower()
+
+
+def can_execute(lm, task, capabilities, state):
+    response = lm(f'''
+            "Given the task '{task}', the capabilities '{capabilities}',
+            and the state '{state}', determine if the task can be executed.
+            Please provide the answer as 'True' or 'False':
+            ''')
+
+    return response.strip().lower()
+
+
+def execute_task(llm, state, task):
+    response = lm(f'''
+                Given the current state '{state}' and the task '{task}',
+                update the state after executing the task:
+                ''')
+
+    return response.strip()
+
+
 def extract_and_format_information(lm, webpage_content):
     with system():
         lm += "You are a helpful agent"
@@ -25,43 +55,28 @@ def extract_and_format_information(lm, webpage_content):
 
 def check_subtasks(lm, task, subtasks, capabilities_input):
     task_statuses = ['True', 'False']
-    with system():
-        lm += "You are a helpful agent"
-
     subtasks_delineated = comma_seperated_items(subtasks)
-
-    with user():
-        lm += f'''
+    response = lm(f'''
             Given the parent task '{task}', and its subtasks '{subtasks_delineated}',
         check if these subtasks effectively and comprehensively address the requirements
         of the parent task without any gaps or redundancies, using the following capabilities:
         '{capabilities_input}'. Return 'True' if they meet the requirements or 'False' otherwise.
-        '''
+        ''')
 
-    with assistant():
-        lm += gen("result")
-
-    return lm["result"].strip().lower()
+    return response.strip().lower()
 
 
 def get_subtasks(lm, task, state, remaining_decompositions, capabilities_input):
-    with system():
-        lm += "You are a helpful agent"
-
-    with user():
-        lm += f'''
+    response = lm(f'''
         Given the task '{task}', the current state '{state}',
         and {remaining_decompositions} decompositions remaining before failing,
         please decompose the task into a detailed step-by-step plan
         that can be achieved using the following capabilities:
         '{capabilities_input}'. Provide the subtasks in a comma-separated list,
         each enclosed in square brackets: [subtask1], [subtask2], ...
-        '''
+        ''')
 
-    with assistant():
-        lm += gen("subtasks_list")
-
-    return lm['subtasks_list'].strip()
+    return response.strip()
 
 
 def suggest_new_query(query):
@@ -163,50 +178,31 @@ def confirm_deliverable_changes(lm, deliverable_content, updated_content):
 
 def translate(lm, original_task, capabilities_input):
     # translates a task into a form that can be completed with the specified capabilities
-    with system():
-        lm += "You are a helpful agent"
-
-    with user():
-        lm += f'''
+    response = lm(f'''
         Translate the task '{original_task}' into a form that can be executed using the following capabilities:
         '{capabilities_input}'. Provide the executable form in a single line without any commentary
         or superfluous text.
         
         When translated to use the specified capabilities the result is:
-        '''
+        ''')
 
-    with assistant():
-        lm += gen("translated_task")
-
-    return lm['translated_task']
+    return response
 
 
-@guidance
 def is_task_primitive(lm, task_name, capabilities_text):
     task_types = ['primitive', 'compound']
 
-    with system():
-        lm += "You are a helpful agent"
+    response = lm(f'''
+    Given the task '{task_name}' and the capabilities '{capabilities_text}',
+    determine if the task is primitive which cannot be broken up further or compound which can be broken down more.
+    Please provide the answer as 'primitive' or 'compound':
+    ''')
 
-    with user():
-        lm += f'''
-        Given the task '{task_name}' and the capabilities '{capabilities_text}',
-        determine if the task is primitive which cannot be broken up further or compound which can be broken down more.
-        Please provide the answer as 'primitive' or 'compound':
-        '''
-
-    with assistant():
-        lm += gen("choice")
-
-    return lm['choice']
+    return response
 
 
 def evaluate_candidate(lm, task, subtasks, capabilities_input):
-    with system():
-        lm += "You are a helpful agent"
-
-    with user():
-        lm += f'''
+    response = lm(f'''
         Given the parent task {task}, and its subtasks {subtasks}, 
         evaluate how well these subtasks address the requirements 
         of the parent task without any gaps or redundancies, using the following capabilities: 
@@ -215,9 +211,6 @@ def evaluate_candidate(lm, task, subtasks, capabilities_input):
         
         Please follow this regex expression: ^[0]\.\d{{8}}$
         Score:
-        '''
+        ''')
 
-    with assistant():
-        lm += gen("score", temperature=0.5, max_tokens=10)
-
-    return lm['score']
+    return response
