@@ -7,14 +7,18 @@ from openai_api import call_openai_api, log_response
 from task_node import TaskNode
 from text_utils import extract_lists, trace_function_calls
 from guidance_prompts import htn_prompts
+from guidance import models
+
 
 class HTNPlanner:
-    def __init__(self, initial_state, goal_task, capabilities_input, max_depth=5, send_update_callback=None):
+    def __init__(self, initial_state, goal_task, capabilities_input, max_depth=5, send_update_callback=None,
+                 lm=models.OpenAI('gpt-3.5-turbo')):
         self.initial_state = initial_state
         self.goal_task = goal_task
         self.capabilities_input = capabilities_input
         self.max_depth = max_depth
         self.send_update_callback = send_update_callback
+        self.lm = lm
 
     def htn_planning(self):
         # Storage for successful task_node's so that they don't need to get regenerated for similar inputs
@@ -33,7 +37,8 @@ class HTNPlanner:
         return root_node
 
     @trace_function_calls
-    def htn_planning_recursive(self, state, goal_task, root_node, max_depth, capabilities_input, db, send_update_callback=None):
+    def htn_planning_recursive(self, state, goal_task, root_node, max_depth, capabilities_input, db,
+                               send_update_callback=None):
         if gpt4_is_goal(state, goal_task):
             return root_node
 
@@ -41,7 +46,7 @@ class HTNPlanner:
             send_update_callback(root_node)
 
         success, updated_state = self.decompose(root_node, state, 0, max_depth, capabilities_input, goal_task,
-                                        db, send_update_callback)
+                                                db, send_update_callback)
         if success:
             root_node.status = "succeeded"
             state = updated_state
@@ -59,26 +64,24 @@ class HTNPlanner:
             return True
         return False
 
-
     @trace_function_calls
     def translate_task(self, task, capabilities_input):
-        response = htn_prompts.translate(task, capabilities_input)
+        response = htn_prompts.translate(self.lm, task, capabilities_input)
         translated_task = response.strip()
         log_response("translate_task", translated_task)
         return translated_task
 
-
     # Add a new function to check if subtasks meet the requirements
     @trace_function_calls
     def check_subtasks(self, task, subtasks, capabilities_input):
-        result = htn_prompts.check_subtasks(task, subtasks, capabilities_input)
+        result = htn_prompts.check_subtasks(self.lm, task, subtasks, capabilities_input)
         log_response("check_subtasks", result)
         return result == 'true'
 
-
     @trace_function_calls
-    def decompose(self, task_node, state, depth, max_depth, capabilities_input, goal_state, db, send_update_callback=None,
-                n_candidates=3):
+    def decompose(self, task_node, state, depth, max_depth, capabilities_input, goal_state, db,
+                  send_update_callback=None,
+                  n_candidates=3):
         task = task_node.task_name
         decompose_state = state
 
@@ -96,7 +99,7 @@ class HTNPlanner:
         if remaining_decompositions == 0:
             return True, decompose_state
         else:
-            if is_task_primitive(task, capabilities_input):
+            if is_task_primitive(self.lm, task, capabilities_input):
                 # Translate the task before checking if it can be executed
                 translated_task = self.translate_task(task, capabilities_input)
 
@@ -126,7 +129,8 @@ class HTNPlanner:
                 candidates = []
                 subtasks_list = []
                 for _ in range(n_candidates):
-                    subtasks_list = self.get_subtasks(task, decompose_state, remaining_decompositions, capabilities_input)
+                    subtasks_list = self.get_subtasks(task, decompose_state, remaining_decompositions,
+                                                      capabilities_input)
                     score = self.evaluate_candidate(task, [subtask for subtask in subtasks_list], capabilities_input)
                     candidates.append((subtasks_list, score))
 
@@ -144,7 +148,8 @@ class HTNPlanner:
                         best_candidate = subtasks_list
 
                 if not success and best_candidate is not None:
-                    print(f"No candidates met the requirements, using the best candidate:\n'{', '.join(best_candidate)}'")
+                    print(
+                        f"No candidates met the requirements, using the best candidate:\n'{', '.join(best_candidate)}'")
                     subtasks_list = best_candidate
 
                 if success or best_candidate is not None:
@@ -156,8 +161,8 @@ class HTNPlanner:
                         task_node.add_child(subtask_node)
 
                         success, updated_state = self.decompose(subtask_node, decompose_state, depth + 1, max_depth,
-                                                        capabilities_input,
-                                                        goal_state, db, send_update_callback)
+                                                                capabilities_input,
+                                                                goal_state, db, send_update_callback)
 
                         if success:
                             decompose_state = updated_state
@@ -176,14 +181,13 @@ class HTNPlanner:
 
                 return success, decompose_state
 
-
     @trace_function_calls
     def evaluate_candidate(self, task, subtasks, capabilities_input):
         max_retries = 3
         retries = 0
         while retries < max_retries:
             # Max 10 token or 8 digits after the decimal 0.99999999
-            response = htn_prompts.evaluate_candidate(task, subtasks, capabilities_input)
+            response = htn_prompts.evaluate_candidate(self.lm, task, subtasks, capabilities_input)
             try:
                 score = float(response.strip())
                 log_response("evaluate_candidate", score)
@@ -193,20 +197,19 @@ class HTNPlanner:
                 if retries >= max_retries:
                     raise ValueError("Failed to convert response to float after multiple retries.")
 
-
     @trace_function_calls
     def get_subtasks(self, task, state, remaining_decompositions, capabilities_input):
-        subtasks_with_types = htn_prompts.get_subtasks(task, state, remaining_decompositions, capabilities_input)
+        subtasks_with_types = htn_prompts.get_subtasks(self.lm, task, state, remaining_decompositions,
+                                                       capabilities_input)
         print(f"Decomposing task {task} into candidates:\n{subtasks_with_types}")
         subtasks_list = extract_lists(subtasks_with_types)
         return subtasks_list
-
 
     # Update the execute_task function to log state changes
     @trace_function_calls
     def execute_task(self, state, task):
         prompt = (f"Given the current state '{state}' and the task '{task}', "
-                f"update the state after executing the task:")
+                  f"update the state after executing the task:")
 
         response = call_openai_api(prompt)
 

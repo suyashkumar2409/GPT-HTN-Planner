@@ -5,6 +5,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 from htn_planner import HTNPlanner
 from search_planner import SearchPlanner
+from guidance import models
 
 from gpt4_utils import get_initial_task, compress_capabilities
 from text_utils import trace_function_calls
@@ -47,18 +48,26 @@ def print_plan(task_node, depth=0):
     for child in task_node.children:
         print_plan(child, depth + 1)
 
-def main():
+def main(fast_run=False):
     # Clear the log file at the beginning of each run
     with open('function_trace.log', 'w') as log_file:
         log_file.write("")
 
-    initial_state_input = input("Describe the initial state: ")
-    goal_input = input("Describe your goal: ")
+    if fast_run:
+        initial_state_input = "astro and playmate are on a beach"
+        goal_input = "astro and playmate explore the beach to try and find a treasure map"
+    else:
+        initial_state_input = input("Describe the initial state: ")
+        goal_input = input("Describe your goal: ")
 
     # Set default capabilities to a Linux terminal with internet access
     default_capabilities = "Linux terminal, internet access"
     print(f"Default capabilities: {default_capabilities}")
-    capabilities_input = input("Describe the capabilities available (press Enter to use default): ")
+
+    if fast_run:
+        capabilities_input = ""
+    else:
+        capabilities_input = input("Describe the capabilities available (press Enter to use default): ")
 
     # Use default capabilities if the user doesn't provide any input
     if not capabilities_input.strip():
@@ -67,7 +76,10 @@ def main():
     goal_task = get_initial_task(goal_input)
     compressed_capabilities = compress_capabilities(capabilities_input)
 
-    planner_choice = input("Choose planner: (1) HTN Planner (default), (2) A* Search Planner: ").strip()
+    if fast_run:
+        planner_choice = "1"
+    else:
+        planner_choice = input("Choose planner: (1) HTN Planner (default), (2) A* Search Planner: ").strip()
     if planner_choice == "2":
         use_search_planner = True
         print("A* search planner selected")
@@ -84,7 +96,7 @@ def main():
                                        send_task_node_update)
         plan = search_planner.plan()
     else:
-        htn_planner = HTNPlanner(initial_state_input, goal_task, compressed_capabilities, 5, send_task_node_update)
+        htn_planner = HTNPlanner(initial_state_input, goal_task, compressed_capabilities, 5, send_task_node_update, models.OpenAI('gpt-3.5-turbo'))
         plan = htn_planner.htn_planning()
 
     if plan:
@@ -95,4 +107,4 @@ def main():
 
 if __name__ == '__main__':
     # Run the main function
-    main()
+    main(fast_run=True)

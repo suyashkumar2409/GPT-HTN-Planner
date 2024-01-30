@@ -1,75 +1,80 @@
 import guidance
+from guidance import models, gen, system, user, assistant, select
+from src.utils import comma_seperated_items
 import os
 
-guidance_gpt4_api = guidance.llms.OpenAI("gpt-4", api_key=os.environ.get('OPENAI_KEY'))
-guidance.llm = guidance_gpt4_api
+guidance_gpt4_api = None
+lm = models.OpenAI('gpt-3.5-turbo')
+
 
 # Add new functions for extracting and suggesting new queries here
-def extract_and_format_information(webpage_content):
-    structured_info = guidance('''
-    {{#system~}}You are a helpful assistant.{{~/system}}
-    {{#user~}}Extract and format relevant information from the following webpage content: {{webpage_content}}{{~/user}}
-    {{#assistant}}{{gen "extracted_info"}}{{/assistant}}''',
-    llm=guidance_gpt4_api)
+def extract_and_format_information(lm, webpage_content):
+    with system():
+        lm += "You are a helpful agent"
 
-    output = structured_info(webpage_content=webpage_content)
+    with user():
+        lm += f'''
+        Extract and format relevant information from the following webpage content: {webpage_content}
+        '''
 
-    return output['extracted_info']
+    with assistant():
+        lm += gen("extracted_info")
 
-def check_subtasks(task, subtasks, capabilities_input):
+    return lm['extracted_info']
+
+
+def check_subtasks(lm, task, subtasks, capabilities_input):
     task_statuses = ['True', 'False']
+    with system():
+        lm += "You are a helpful agent"
 
-    check_subtasks_program = guidance('''
-    {{#system~}}
-    You are a helpful assistant.
-    {{~/system}}
-    {{#user~}}
-    Given the parent task '{{task}}', and its subtasks '{{#each subtasks}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}',
-    check if these subtasks effectively and comprehensively address the requirements
-    of the parent task without any gaps or redundancies, using the following capabilities:
-    '{{capabilities_input}}'. Return 'True' if they meet the requirements or 'False' otherwise.
-    {{~/user}}
-    {{#assistant~}}
-    {{select "result" options=task_statuses}}
-    {{~/assistant}}''', llm=guidance_gpt4_api)
+    subtasks_delineated = comma_seperated_items(subtasks)
 
-    response = check_subtasks_program(task=task, subtasks=subtasks, capabilities_input=capabilities_input, task_statuses=task_statuses)
-    result = response["result"].strip().lower()
+    with user():
+        lm += f'''
+            Given the parent task '{task}', and its subtasks '{subtasks_delineated}',
+        check if these subtasks effectively and comprehensively address the requirements
+        of the parent task without any gaps or redundancies, using the following capabilities:
+        '{capabilities_input}'. Return 'True' if they meet the requirements or 'False' otherwise.
+        '''
 
-    return result
+    with assistant():
+        lm += gen("result")
 
-def get_subtasks(task, state, remaining_decompositions, capabilities_input):
-    subtasks_prompt = guidance('''
-    {{#system}}You are a helpful agent{{/system}}
+    return lm["result"].strip().lower()
 
-    {{#user}}
-    Given the task '{{task}}', the current state '{{state}}',
-    and {{remaining_decompositions}} decompositions remaining before failing,
-    please decompose the task into a detailed step-by-step plan
-    that can be achieved using the following capabilities:
-    '{{capabilities_input}}'. Provide the subtasks in a comma-separated list,
-    each enclosed in square brackets: [subtask1], [subtask2], ...
-    {{/user}}
-    {{#assistant}}{{gen "subtasks_list"}}{{/assistant}}
-    ''', llm=guidance_gpt4_api)
 
-    result = subtasks_prompt(task=task, state=state,
-                             remaining_decompositions=remaining_decompositions,
-                             capabilities_input=capabilities_input)
-    subtasks_with_types = result['subtasks_list'].strip()
+def get_subtasks(lm, task, state, remaining_decompositions, capabilities_input):
+    with system():
+        lm += "You are a helpful agent"
 
-    return subtasks_with_types
+    with user():
+        lm += f'''
+        Given the task '{task}', the current state '{state}',
+        and {remaining_decompositions} decompositions remaining before failing,
+        please decompose the task into a detailed step-by-step plan
+        that can be achieved using the following capabilities:
+        '{capabilities_input}'. Provide the subtasks in a comma-separated list,
+        each enclosed in square brackets: [subtask1], [subtask2], ...
+        '''
+
+    with assistant():
+        lm += gen("subtasks_list")
+
+    return lm['subtasks_list'].strip()
+
 
 def suggest_new_query(query):
     new_query = guidance('''
     {{#system~}}You are a helpful assistant.{{~/system}}
     {{#user~}}Suggest a new query to find the missing information based on the initial query: {{query}}{{~/user}}
     {{#assistant}}{{gen "new_query"}}{{/assistant}}''',
-    llm=guidance_gpt4_api)
+                         llm=guidance_gpt4_api)
 
     output = new_query(query=query)
 
     return output['new_query']
+
 
 def update_plan_output(task_name, task_description, elapsed_time, time_limit, context_window):
     task_statuses = ['not started', 'in progress', 'completed']
@@ -129,87 +134,90 @@ def update_plan_output(task_name, task_description, elapsed_time, time_limit, co
     elif action == "delete":
         details["delete_line"] = output["delete_line"]
 
-    return { "status": status, "action": action, "details": details }
+    return {"status": status, "action": action, "details": details}
 
-def confirm_deliverable_changes(deliverable_content, updated_content):
+
+def confirm_deliverable_changes(lm, deliverable_content, updated_content):
     confirm_choices = ['yes', 'no']
 
-    confirm_changes = guidance('''
-    {{#system}}You are a helpful agent{{/system}}
-    {{#user}}
-    Please confirm the changes made to the deliverable.
-    Original content:
-    {{deliverable_content}}
+    with system():
+        lm += "You are a helpful agent"
 
-    Updated content:
-    {{updated_content}}
+    with user():
+        lm += f'''
+        Please confirm the changes made to the deliverable.
+        Original content:
+        {deliverable_content}
+        
+        Updated content:
+        {updated_content}
+        
+        Type 'yes' to confirm the changes or 'no' to revert them.
+        '''
 
-    Type 'yes' to confirm the changes or 'no' to revert them.
-    {{/user}}
-    {{#assistant}}{{select "confirm" options=confirm_choices}}{{/assistant}}
-    ''')
+    with assistant():
+        lm += gen("confirm")
 
-    result = confirm_changes(deliverable_content=deliverable_content,
-                             updated_content=updated_content,
-                             confirm_choices=confirm_choices)
-    return result['confirm']
+    return lm['confirm']
 
 
-def translate(original_task, capabilities_input):
+def translate(lm, original_task, capabilities_input):
     # translates a task into a form that can be completed with the specified capabilities
-    task_translation = guidance('''
-    {{#system}}You are a helpful agent{{/system}}
-    
-    {{#user}}Translate the task '{{task}}' into a form that can be executed using the following capabilities:
-    '{{capabilities_input}}'. Provide the executable form in a single line without any commentary
-    or superfluous text.
-    
-    When translated to use the specified capabilities the result is:{{/user}}
-    {{#assistant}}{{gen "translated_task"}}{{/assistant}}
-    ''', llm=guidance_gpt4_api)
+    with system():
+        lm += "You are a helpful agent"
 
-    result = task_translation(task=original_task, capabilities_input=capabilities_input)
-    return result['translated_task']
+    with user():
+        lm += f'''
+        Translate the task '{original_task}' into a form that can be executed using the following capabilities:
+        '{capabilities_input}'. Provide the executable form in a single line without any commentary
+        or superfluous text.
+        
+        When translated to use the specified capabilities the result is:
+        '''
+
+    with assistant():
+        lm += gen("translated_task")
+
+    return lm['translated_task']
 
 
-def is_task_primitive(task_name, capabilities_text):
+@guidance
+def is_task_primitive(lm, task_name, capabilities_text):
     task_types = ['primitive', 'compound']
 
-    primitive_check = guidance('''
-    {{#system}}You are a helpful agent{{/system}}
+    with system():
+        lm += "You are a helpful agent"
 
-    {{#user}}
-    Given the task '{{task_name}}' and the capabilities '{{capabilities_text}}',
-    determine if the task is primitive which cannot be broken up further or compound which can be broken down more.
-    Please provide the answer as 'primitive' or 'compound':
-    {{/user}}
-    {{~#assistant~}}
-    {{select "choice" options=task_types}}
-    {{~/assistant~}}
-    ''', llm=guidance_gpt4_api)
+    with user():
+        lm += f'''
+        Given the task '{task_name}' and the capabilities '{capabilities_text}',
+        determine if the task is primitive which cannot be broken up further or compound which can be broken down more.
+        Please provide the answer as 'primitive' or 'compound':
+        '''
 
-    result = primitive_check(task_name=task_name, capabilities_text=capabilities_text, task_types=task_types)
-    return result['choice']
+    with assistant():
+        lm += gen("choice")
+
+    return lm['choice']
 
 
-def evaluate_candidate(task, subtasks, capabilities_input):
-    evaluation = guidance('''
-    {{#system}}You are a helpful agent{{/system}}
+def evaluate_candidate(lm, task, subtasks, capabilities_input):
+    with system():
+        lm += "You are a helpful agent"
 
-    {{#user}}
-    Given the parent task {{task}}, and its subtasks {{subtasks}}, 
-    evaluate how well these subtasks address the requirements 
-    of the parent task without any gaps or redundancies, using the following capabilities: 
-    {{capabilities_input}}
-    Return a score between 0 and 1, where 1 is the best possible score.
-    
-    Please follow this regex expression: ^[0]\.\d{8}$
-    Score:
-    {{/user}}
-    {{#assistant~}}
-    {{gen 'score' temperature=0.5 max_tokens=10}}
-    {{~/assistant}}''',
-                          llm=guidance_gpt4_api)
+    with user():
+        lm += f'''
+        Given the parent task {task}, and its subtasks {subtasks}, 
+        evaluate how well these subtasks address the requirements 
+        of the parent task without any gaps or redundancies, using the following capabilities: 
+        {capabilities_input}
+        Return a score between 0 and 1, where 1 is the best possible score.
+        
+        Please follow this regex expression: ^[0]\.\d{{8}}$
+        Score:
+        '''
 
-    result = evaluation(task=task, subtasks=subtasks, capabilities_input=capabilities_input)
-    return result['score']
+    with assistant():
+        lm += gen("score", temperature=0.5, max_tokens=10)
+
+    return lm['score']
